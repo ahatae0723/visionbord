@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ゆめかな ビジョンボード プロンプトシート</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@300;400;700&family=Cormorant+Garamond:ital,wght@0,300;0,600;1,300&display=swap');
+
+  :root {
+    --teal: #2E8B8B;
+    --teal-light: #E8F5F5;
+    --gold: #B8860B;
+    --gold-light: #FFF8E7;
+    --purple: #6B4E8B;
+    --purple-light: #F3EEF9;
+    --gray: #666;
+    --bg: #FAFAF8;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Zen Kaku Gothic New', sans-serif;
+    background: var(--bg);
+    color: #333;
+    padding: 20px;
+    max-width: 720px;
+    margin: 0 auto;
+  }
+
+  header {
+    text-align: center;
+    padding: 28px 0 20px;
+    border-bottom: 2px solid var(--teal);
+    margin-bottom: 24px;
+  }
+  header .sub { font-size: 11px; color: var(--gold); letter-spacing: 3px; font-weight: 700; margin-bottom: 6px; }
+  header h1 { font-family: 'Cormorant Garamond', serif; font-size: 26px; color: var(--teal); font-weight: 600; margin-bottom: 6px; }
+  header p { font-size: 13px; color: var(--gray); line-height: 1.6; }
+
+  .intro-box {
+    background: var(--teal-light);
+    border-left: 4px solid var(--teal);
+    padding: 14px 18px;
+    border-radius: 0 8px 8px 0;
+    margin-bottom: 24px;
+    font-size: 13px;
+    line-height: 1.8;
+    color: #333;
+  }
+
+  .step-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--gold);
+    letter-spacing: 2px;
+    margin-bottom: 12px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #eee;
+  }
+
+  /* ===== サイズ選択 ===== */
+  .size-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 24px;
+  }
+
+  .size-card {
+    border: 2px solid #e0e0e0;
+    border-radius: 12px;
+    padding: 14px 10px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s, transform 0.15s;
+    background: white;
+    user-select: none;
+  }
+
+  .size-card:hover { border-color: var(--teal); transform: translateY(-2px); }
+
+  .size-card.selected {
+    border-color: var(--teal);
+    background: var(--teal-light);
+  }
+
+  .size-card .size-icon { font-size: 28px; margin-bottom: 6px; }
+  .size-card .size-name { font-size: 13px; font-weight: 700; color: #333; margin-bottom: 3px; }
+  .size-card .size-desc { font-size: 11px; color: var(--gray); line-height: 1.4; }
+  .size-card.selected .size-name { color: var(--teal); }
+
+  /* ===== 問いカード ===== */
+  .question-block {
+    background: white;
+    border: 1.5px solid #e0e0e0;
+    border-radius: 12px;
+    padding: 18px 20px;
+    margin-bottom: 14px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .question-block:focus-within { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(46,139,139,0.08); }
+
+  .question-block .theme {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    color: white;
+    background: var(--teal);
+    padding: 2px 10px;
+    border-radius: 20px;
+    margin-bottom: 10px;
+    letter-spacing: 1px;
+  }
+
+  .question-block .q-text { font-size: 14px; font-weight: 700; color: #333; line-height: 1.7; margin-bottom: 8px; }
+  .question-block .hint { font-size: 11px; color: #aaa; margin-bottom: 10px; font-style: italic; }
+
+  .question-block textarea {
+    width: 100%;
+    border: 1px solid #eee;
+    border-radius: 8px;
+    padding: 10px 12px;
+    outline: none;
+    resize: none;
+    font-family: 'Zen Kaku Gothic New', sans-serif;
+    font-size: 14px;
+    color: #333;
+    line-height: 1.7;
+    background: var(--bg);
+    min-height: 60px;
+    transition: border-color 0.2s;
+  }
+  .question-block textarea:focus { border-color: var(--teal); background: white; }
+
+  .generate-btn {
+    display: block;
+    width: 100%;
+    padding: 16px;
+    background: var(--teal);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-family: 'Zen Kaku Gothic New', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    margin: 24px 0 16px;
+    transition: background 0.2s, transform 0.1s;
+    letter-spacing: 1px;
+  }
+  .generate-btn:hover { background: #267878; transform: translateY(-1px); }
+  .generate-btn:active { transform: translateY(0); }
+
+  .result-area {
+    display: none;
+    background: var(--purple-light);
+    border: 1.5px solid var(--purple);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .result-area.visible { display: block; }
+  .result-title { font-size: 13px; font-weight: 700; color: var(--purple); margin-bottom: 12px; letter-spacing: 1px; }
+
+  .prompt-text {
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 16px;
+    font-size: 13px;
+    line-height: 1.9;
+    color: #333;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .copy-btn {
+    display: block;
+    width: 100%;
+    padding: 13px;
+    background: var(--purple);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-family: 'Zen Kaku Gothic New', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    margin-top: 12px;
+    transition: background 0.2s;
+    letter-spacing: 1px;
+  }
+  .copy-btn:hover { background: #5a3f77; }
+  .copy-btn.copied { background: #4CAF50; }
+
+  .chatgpt-link {
+    display: block;
+    text-align: center;
+    margin-top: 10px;
+    padding: 13px;
+    background: #10a37f;
+    color: white;
+    border-radius: 8px;
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    transition: background 0.2s;
+  }
+  .chatgpt-link:hover { background: #0d8c6d; }
+
+  .tip-box {
+    background: var(--gold-light);
+    border-left: 4px solid var(--gold);
+    padding: 14px 18px;
+    border-radius: 0 8px 8px 0;
+    font-size: 13px;
+    line-height: 1.8;
+    color: #555;
+    margin-top: 20px;
+  }
+  .tip-box strong { color: var(--gold); }
+
+  footer { text-align: center; padding: 24px 0 12px; font-size: 11px; color: #bbb; border-top: 1px solid #eee; margin-top: 28px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="sub">【2026年を予約する】</div>
+  <h1>ゆめかな ビジョンボード作成会</h1>
+  <p>ワークで浮かんだ言葉を入力して、ボタンを押すだけ✨<br>あなただけのビジョンボードプロンプトが完成します</p>
+</header>
+
+<div class="intro-box">
+  📝 サイズを選んで → 5つの問いに答えて → 「生成する」を押す → ChatGPTにコピペするだけ！<br>
+  完璧な文章でなくて大丈夫。浮かんだ言葉をそのまま入れてください。
+</div>
+
+<!-- STEP 0: サイズ選択 -->
+<div class="step-label">STEP 1　作りたいサイズを選んでください</div>
+<div class="size-grid">
+  <div class="size-card selected" onclick="selectSize(this, 'phone')" data-size="phone">
+    <div class="size-icon">📱</div>
+    <div class="size-name">スマホ待受</div>
+    <div class="size-desc">縦長サイズ<br>毎日目に入る！</div>
+  </div>
+  <div class="size-card" onclick="selectSize(this, 'pc')" data-size="pc">
+    <div class="size-icon">💻</div>
+    <div class="size-name">PC壁紙</div>
+    <div class="size-desc">横長サイズ<br>仕事中も意識！</div>
+  </div>
+  <div class="size-card" onclick="selectSize(this, 'a4')" data-size="a4">
+    <div class="size-icon">🖨️</div>
+    <div class="size-name">A4印刷用</div>
+    <div class="size-desc">縦長A4サイズ<br>手帳・壁に貼る</div>
+  </div>
+  <div class="size-card" onclick="selectSize(this, 'instagram')" data-size="instagram">
+    <div class="size-icon">📸</div>
+    <div class="size-name">Instagram</div>
+    <div class="size-desc">正方形サイズ<br>シェアしたい方に</div>
+  </div>
+  <div class="size-card" onclick="selectSize(this, 'postcard')" data-size="postcard">
+    <div class="size-icon">🗂️</div>
+    <div class="size-name">ポストカード</div>
+    <div class="size-desc">横長サイズ<br>デスクに飾る</div>
+  </div>
+  <div class="size-card" onclick="selectSize(this, 'free')" data-size="free">
+    <div class="size-icon">🎨</div>
+    <div class="size-name">おまかせ</div>
+    <div class="size-desc">AIにサイズを<br>おまかせ</div>
+  </div>
+</div>
+
+<!-- STEP 1: 問いかけ -->
+<div class="step-label">STEP 2　5つの問いに答えてください</div>
+
+<div class="question-block">
+  <span class="theme">⏰ ① 時間</span>
+  <div class="q-text">今の「やらなきゃいけない」から全部解放されたとき、<br>あなたは何に時間を使いますか？</div>
+  <div class="hint">例：海辺でゆっくり本を読む　/ 子どもと毎日公園で遊ぶ　/ 好きな音楽をひく</div>
+  <textarea id="time" placeholder="浮かんだ言葉をそのまま入力..." rows="2"></textarea>
+</div>
+
+<div class="question-block">
+  <span class="theme">🌍 ② 場所</span>
+  <div class="q-text">もし「どこでもドア」があって、どこへでも行けるとしたら、<br>あなたはどこに行きますか？そこでどんな毎日を過ごしていますか？</div>
+  <div class="hint">例：南の島のリゾート　/ 緑に囲まれた静かな山　/ おしゃれなカフェがある都市</div>
+  <textarea id="place" placeholder="浮かんだ言葉をそのまま入力..." rows="2"></textarea>
+</div>
+
+<div class="question-block">
+  <span class="theme">👥 ③ 人</span>
+  <div class="q-text">一緒にいると自然と元気になれる人たちに囲まれているとしたら、<br>その人たちはどんな人ですか？</div>
+  <div class="hint">例：笑顔の子どもたち　/ 信頼できる仲間　/ 穏やかで温かい家族</div>
+  <textarea id="people" placeholder="浮かんだ言葉をそのまま入力..." rows="2"></textarea>
+</div>
+
+<div class="question-block">
+  <span class="theme">💰 ④ お金・自由</span>
+  <div class="q-text">もし100億円あって、お金のことを一切考えなくていいとしたら、<br>あなたは何をしていますか？どんな毎日を送っていますか？</div>
+  <div class="hint">例：世界中を旅しながら好きな仕事をしている　/ 大きな家で家族と暮らしている</div>
+  <textarea id="money" placeholder="浮かんだ言葉をそのまま入力..." rows="2"></textarea>
+</div>
+
+<div class="question-block">
+  <span class="theme">💌 ⑤ メッセージ</span>
+  <div class="q-text">全てを手に入れた理想の自分が、今のあなたに一言声をかけるとしたら、<br>何と言いますか？</div>
+  <div class="hint">例：大丈夫、あなたはもう十分すごい　/ 信じて進んで　/ 楽しんで生きていいよ</div>
+  <textarea id="message" placeholder="浮かんだ言葉をそのまま入力..." rows="2"></textarea>
+</div>
+
+<button class="generate-btn" onclick="generatePrompt()">✨ プロンプトを生成する</button>
+
+<div class="result-area" id="resultArea">
+  <div class="result-title" id="resultTitle">📋 STEP 3　コピーしてChatGPTに貼り付けてください</div>
+  <div class="prompt-text" id="promptText"></div>
+  <button class="copy-btn" id="copyBtn" onclick="copyPrompt()">📋 コピーする</button>
+  <a href="https://chatgpt.com" target="_blank" class="chatgpt-link">🤖 ChatGPTを開く →</a>
+</div>
+
+<div class="tip-box">
+  <strong>💡 うまくいかないときのヒント</strong><br>
+  ・画像が生成されない → そのまま再送信してみてください<br>
+  ・イメージと違う → 「もっと明るく」「もっと自然の中で」などと追加で送ってOKです<br>
+  ・保存するには → 画像を長押し（スマホ）またはダウンロードして壁紙に設定📱
+</div>
+
+<footer>ゆめかな ビジョンボード作成会　by りむすび × 波多江愛</footer>
+
+<script>
+const sizeConfig = {
+  phone:     { label: "📱 スマホ待受",   spec: "縦長（スマートフォンの待受・ロック画面サイズ、9:16比率）" },
+  pc:        { label: "💻 PC壁紙",       spec: "横長（PCデスクトップ壁紙サイズ、16:9比率）" },
+  a4:        { label: "🖨️ A4印刷用",     spec: "縦長A4サイズ（印刷に適した高解像度、手帳や壁に貼るのに最適）" },
+  instagram: { label: "📸 Instagram投稿", spec: "正方形（Instagram投稿サイズ、1:1比率）" },
+  postcard:  { label: "🗂️ ポストカード",  spec: "横長（ポストカード・デスク飾りサイズ、3:2比率）" },
+  free:      { label: "🎨 おまかせ",      spec: "ビジョンボードとして最も美しく映えるサイズ・構図" },
+};
+
+let selectedSize = 'phone';
+
+function selectSize(el, size) {
+  document.querySelectorAll('.size-card').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+  selectedSize = size;
+}
+
+function generatePrompt() {
+  const time    = document.getElementById('time').value.trim()    || '（未入力）';
+  const place   = document.getElementById('place').value.trim()   || '（未入力）';
+  const people  = document.getElementById('people').value.trim()  || '（未入力）';
+  const money   = document.getElementById('money').value.trim()   || '（未入力）';
+  const message = document.getElementById('message').value.trim() || '（未入力）';
+
+  const size = sizeConfig[selectedSize];
+
+  const prompt =
+`以下の情報をもとに、私の理想の未来を表す美しいビジョンボードを1枚の画像として生成してください。
+
+【サイズ・形式】
+${size.spec}
+写真コラージュ風。明るく温かみがあり、ポジティブでワクワクするイメージ。
+
+【私の理想の未来】
+⏰ 時間の使い方：${time}
+🌍 いたい場所：${place}
+👥 一緒にいる人：${people}
+💰 お金・自由：${money}
+💌 自分へのメッセージ：「${message}」
+
+【画像の構成】
+・上記5つのテーマを表す写真や風景をコラージュして1枚にまとめてください
+・メッセージの言葉を画像の中に美しいフォントで日本語で入れてください
+・全体的に温かみのある明るい色合いで、毎日見るたびにワクワクできるデザインにしてください`;
+
+  document.getElementById('promptText').textContent = prompt;
+  document.getElementById('resultTitle').textContent = `📋 STEP 3　コピーしてChatGPTに貼り付けてください（${size.label}用）`;
+
+  const resultArea = document.getElementById('resultArea');
+  resultArea.classList.add('visible');
+  resultArea.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  const btn = document.getElementById('copyBtn');
+  btn.textContent = '📋 コピーする';
+  btn.classList.remove('copied');
+}
+
+function copyPrompt() {
+  const text = document.getElementById('promptText').textContent;
+
+  // HTTPS環境ではClipboard API、それ以外はexecCommandで対応
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text)
+      .then(showCopied)
+      .catch(() => fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+}
+
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.top = '0';
+  ta.style.left = '0';
+  ta.style.opacity = '0';
+  ta.style.pointerEvents = 'none';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  try {
+    document.execCommand('copy');
+    showCopied();
+  } catch (e) {
+    // 手動選択を促す
+    ta.style.opacity = '1';
+    ta.style.position = 'static';
+    ta.style.width = '100%';
+    ta.style.height = '100px';
+    alert('自動コピーできませんでした。上のテキストを手動で選択してコピーしてください。');
+  }
+  document.body.removeChild(ta);
+}
+
+function showCopied() {
+  const btn = document.getElementById('copyBtn');
+  btn.textContent = '✅ コピーしました！';
+  btn.classList.add('copied');
+  setTimeout(() => {
+    btn.textContent = '📋 コピーする';
+    btn.classList.remove('copied');
+  }, 3000);
+}
+</script>
+</body>
+</html>

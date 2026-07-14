@@ -124,6 +124,7 @@ def week_stats(account_rows, posts, start, end):
         if dt and start <= dt < end:
             week_posts.append(p)
     return {
+        "days": days,
         "days_recorded": len(days),
         "account_views": total_views,  # アカウント全体の日別views合計（古い投稿が見られた分も含む）
         "post_views": sum(to_int(p.get("views")) for p in week_posts),  # 期間内に投稿された投稿のviews合計（累計）
@@ -131,6 +132,31 @@ def week_stats(account_rows, posts, start, end):
         "followers_end": followers_end,
         "posts": week_posts,
     }
+
+
+def mermaid_chart(title, labels, values, kind="bar", y_label="閲覧数"):
+    """
+    GitHub上で自動的にグラフとして描画されるMermaid記法（xychart）を作る。
+    kind は "bar"（棒グラフ）か "line"（折れ線）。
+    """
+    lbls = ", ".join('"{}"'.format(str(l).replace('"', "'")) for l in labels)
+    vals = ", ".join(str(int(v)) for v in values)
+    return "\n".join([
+        "```mermaid",
+        # グラフの色をはっきりした青に指定（標準色は薄くて見づらいため）
+        '%%{init: {"themeVariables": {"xyChart": {"plotColorPalette": "#4269d0"}}}}%%',
+        "xychart-beta",
+        f'    title "{title}"',
+        f"    x-axis [{lbls}]",
+        f'    y-axis "{y_label}"',
+        f"    {kind} [{vals}]",
+        "```",
+    ])
+
+
+def short_date(date_str):
+    """'2026-07-08' → '7/8' のような短い表記にする（グラフの横軸用）。"""
+    return f"{int(date_str[5:7])}/{int(date_str[8:10])}"
 
 
 def build_suggestions(this_week, slot_avg, weekday_avg, theme_avg, top_posts, low_posts):
@@ -284,6 +310,21 @@ def main():
         lines.append(f"- ℹ️ 今週はデータが{this_week['days_recorded']}日ぶんしかありません（貯まるほど正確になります）")
     lines.append("")
 
+    # --- 推移グラフ（2日以上データがあるとき） ---
+    days = this_week["days"]
+    if len(days) >= 2:
+        labels = [short_date(r["date"]) for r in days]
+        lines.append("### 📈 日別の閲覧数の推移（アカウント全体）")
+        lines.append("")
+        lines.append(mermaid_chart("1日ごとにアカウント全体が見られた回数",
+                                   labels, [to_int(r["views"]) for r in days], "line"))
+        lines.append("")
+        lines.append("### 👥 フォロワー数の推移")
+        lines.append("")
+        lines.append(mermaid_chart("フォロワー数",
+                                   labels, [to_int(r["followers_count"]) for r in days], "line", "人"))
+        lines.append("")
+
     # --- トップ3投稿 ---
     lines.append("## 🏆 閲覧数トップ3の投稿")
     lines.append("")
@@ -319,6 +360,14 @@ def main():
         if slot_avg:
             lines.append("**時間帯別の平均閲覧数**")
             lines.append("")
+            if len(slot_avg) >= 2:
+                slot_names = [n for n, _, _ in TIME_SLOTS if n in slot_avg]
+                lines.append(mermaid_chart(
+                    "どの時間帯の投稿が伸びたか（平均閲覧数）",
+                    [n.split("（")[0] for n in slot_names],
+                    [slot_avg[n][0] for n in slot_names],
+                ))
+                lines.append("")
             lines.append("| 時間帯 | 平均閲覧数 | 投稿数 |")
             lines.append("|---|---|---|")
             for name, _, _ in TIME_SLOTS:
@@ -330,6 +379,14 @@ def main():
         if weekday_avg:
             lines.append("**曜日別の平均閲覧数**")
             lines.append("")
+            if len(weekday_avg) >= 2:
+                wd_names = [d for d in WEEKDAYS_JP if d in weekday_avg]
+                lines.append(mermaid_chart(
+                    "どの曜日の投稿が伸びたか（平均閲覧数）",
+                    wd_names,
+                    [weekday_avg[d][0] for d in wd_names],
+                ))
+                lines.append("")
             lines.append("| 曜日 | 平均閲覧数 | 投稿数 |")
             lines.append("|---|---|---|")
             for day in WEEKDAYS_JP:
@@ -341,6 +398,14 @@ def main():
         if theme_avg:
             lines.append("**テーマ別の平均閲覧数**（本文のキーワードから自動分類）")
             lines.append("")
+            sorted_theme_items = sorted(theme_avg.items(), key=lambda kv: kv[1][0], reverse=True)
+            if len(theme_avg) >= 2:
+                lines.append(mermaid_chart(
+                    "どのテーマの投稿が伸びたか（平均閲覧数）",
+                    [t for t, _ in sorted_theme_items],
+                    [v[0] for _, v in sorted_theme_items],
+                ))
+                lines.append("")
             lines.append("| テーマ | 平均閲覧数 | 投稿数 |")
             lines.append("|---|---|---|")
             for theme, (avg, count) in sorted(theme_avg.items(), key=lambda kv: kv[1][0], reverse=True):

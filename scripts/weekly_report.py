@@ -125,7 +125,8 @@ def week_stats(account_rows, posts, start, end):
             week_posts.append(p)
     return {
         "days_recorded": len(days),
-        "total_views": total_views,
+        "account_views": total_views,  # アカウント全体の日別views合計（古い投稿が見られた分も含む）
+        "post_views": sum(to_int(p.get("views")) for p in week_posts),  # 期間内に投稿された投稿のviews合計（累計）
         "followers_start": followers_start,
         "followers_end": followers_end,
         "posts": week_posts,
@@ -251,9 +252,19 @@ def main():
     # --- 今週のサマリー ---
     lines.append("## 📊 今週のサマリー")
     lines.append("")
-    tv = this_week["total_views"]
-    pv = prev_week["total_views"] if has_prev else None
-    lines.append(f"- **総閲覧数**: {fmt_num(tv)} {fmt_delta(tv, pv)}")
+    pc = len(this_week["posts"])
+    ppc = len(prev_week["posts"]) if has_prev else None
+
+    # 総閲覧数 = 期間内に投稿された投稿のviews合計（投稿ごとのviewsは取得時点までの累計）
+    tv = this_week["post_views"]
+    pv = prev_week["post_views"] if has_prev else None
+    lines.append(f"- **総閲覧数（今週の投稿{pc}件の閲覧数合計）**: {fmt_num(tv)} {fmt_delta(tv, pv)}")
+
+    if this_week["days_recorded"] > 0:
+        lines.append(
+            f"- **アカウント全体の表示回数**: {fmt_num(this_week['account_views'])}"
+            f"（記録{this_week['days_recorded']}日分の日別合計。過去の投稿が見られた分も含むため、上の数字とは対象が異なります）"
+        )
 
     if this_week["followers_end"] is not None:
         f_end = this_week["followers_end"]
@@ -268,8 +279,6 @@ def main():
     else:
         lines.append("- **フォロワー数**: データなし")
 
-    pc = len(this_week["posts"])
-    ppc = len(prev_week["posts"]) if has_prev else None
     lines.append(f"- **投稿数**: {pc}件 {fmt_delta(pc, ppc)}")
     if this_week["days_recorded"] < 7:
         lines.append(f"- ℹ️ 今週はデータが{this_week['days_recorded']}日ぶんしかありません（貯まるほど正確になります）")

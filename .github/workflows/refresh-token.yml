@@ -1,0 +1,53 @@
+# 【トークンの自動延長】
+# Threads の長期アクセストークンは約60日で切れるため、毎週金曜の朝に自動で延長します。
+# GH_PAT（GitHub操作用トークン）が Secrets に設定されていれば、新しいトークンを
+# GitHub Secrets に自動で書き戻すので、トークン切れの心配がなくなります。
+# ※ 日本時間 金曜 5:00 = UTC 木曜 20:00
+
+name: トークン自動延長
+
+on:
+  schedule:
+    - cron: "0 20 * * 4"   # 毎週 木曜 UTC 20:00 = 日本時間 金曜 朝 5:00
+  workflow_dispatch:        # 手動実行ボタン
+
+permissions:
+  contents: write
+
+concurrency:
+  group: threads-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: リポジトリを取得
+        uses: actions/checkout@v4
+
+      - name: Python を準備
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 必要なライブラリをインストール
+        run: pip install -r requirements.txt
+
+      - name: トークンを延長して保存
+        env:
+          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: python scripts/refresh_token.py
+
+      - name: 有効期限メモをコミット
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/token_status.json logs/
+          if git diff --cached --quiet; then
+            echo "変更なし"
+          else
+            git commit -m "トークン有効期限メモを更新"
+            git pull --rebase origin ${{ github.ref_name }} || true
+            git push
+          fi

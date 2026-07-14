@@ -1,0 +1,86 @@
+# 【毎日の自動取得】
+# 毎朝6時（日本時間）に Threads のインサイトを取得して data/ に保存し、
+# 変更をこのリポジトリに自動コミットします。
+# ※ GitHub Actions の時刻指定は UTC（世界標準時）なので、日本時間から9時間引いて指定しています。
+#    日本時間 朝6:00 = UTC 21:00（前日）
+
+name: 日次インサイト取得
+
+on:
+  schedule:
+    - cron: "0 21 * * *"   # 毎日 UTC 21:00 = 日本時間 翌朝 6:00
+  workflow_dispatch:        # 手動実行ボタン（Actionsタブから「Run workflow」で今すぐ実行できる）
+
+permissions:
+  contents: write   # データをコミットするため
+  issues: write     # エラー時にお知らせIssueを作るため
+
+concurrency:
+  group: threads-data
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: リポジトリを取得
+        uses: actions/checkout@v4
+
+      - name: Python を準備
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 必要なライブラリをインストール
+        run: pip install -r requirements.txt
+
+      - name: インサイトを取得
+        id: fetch
+        env:
+          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+        run: python scripts/fetch_daily.py
+
+      - name: データをコミット
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/ logs/
+          if git diff --cached --quiet; then
+            echo "変更なし（コミットするデータがありません）"
+          else
+            git commit -m "データ更新: $(TZ=Asia/Tokyo date +%Y-%m-%d) の日次取得"
+            git pull --rebase origin ${{ github.ref_name }} || true
+            git push
+          fi
+
+      - name: 失敗時にお知らせIssueを作る
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = "⚠️ 日次取得が失敗しました（トークン切れの可能性）";
+            // 同じお知らせが既に開いていれば、新しく作らない
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              labels: "自動お知らせ",
+            });
+            if (issues.data.some(i => i.title === title)) return;
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              labels: ["自動お知らせ"],
+              body: [
+                "Threads インサイトの日次取得が失敗しました。",
+                "",
+                "**まず確認すること**: アクセストークンの期限切れが最も多い原因です。",
+                "`docs/token_guide.md` の「トークンが切れたとき」の手順で更新してください。",
+                "",
+                `詳しいエラー内容: [実行ログを見る](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
+                "",
+                "対処が終わったら、この Issue は「Close issue」ボタンで閉じてください。",
+              ].join("\n"),
+            });

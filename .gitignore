@@ -1,0 +1,11 @@
+# アクセストークンなどの秘密情報（絶対にGitHubに上げない）
+.env
+
+# Python の一時ファイル
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Mac の一時ファイル
+.DS_Store

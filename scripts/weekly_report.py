@@ -17,6 +17,7 @@ from threads_api import DATA_DIR, JST, REPORTS_DIR, log, token_days_left
 
 ACCOUNT_CSV = DATA_DIR / "account_daily.csv"
 POSTS_CSV = DATA_DIR / "posts.csv"
+HISTORY_CSV = DATA_DIR / "post_history.csv"  # 投稿ごとの数字を毎日記録したもの
 
 WEEKDAYS_JP = ["月", "火", "水", "木", "金", "土", "日"]
 
@@ -31,15 +32,22 @@ THEME_KEYWORDS = {
     "生活習慣": ["朝", "夜", "宿題", "ゲーム", "YouTube", "ごはん", "食事", "寝", "支度", "偏食"],
 }
 
-# 投稿時間帯の区切り
+# 投稿時間帯の区切り。
+# 実際の投稿習慣（4時台〜5時台の「夜明け前」に集中）に合わせてある。
+# 4:55と5:03が別の枠に分かれると、同じ習慣が2つに割れて分析がおかしくなるため、
+# 4〜6時をひとつの「早朝」枠にまとめている。区切りを変えたいときはここを直す。
 TIME_SLOTS = [
-    ("早朝（5〜8時）", 5, 8),
-    ("午前（9〜12時）", 9, 12),
-    ("午後（13〜16時）", 13, 16),
-    ("夕方（17〜20時）", 17, 20),
-    ("夜（21〜24時）", 21, 23),
-    ("深夜（0〜4時）", 0, 4),
+    ("深夜（0〜3時）", 0, 3),
+    ("早朝（4〜6時）", 4, 6),
+    ("朝（7〜9時）", 7, 9),
+    ("昼（10〜15時）", 10, 15),
+    ("夕方（16〜19時）", 16, 19),
+    ("夜（20〜23時）", 20, 23),
 ]
+
+# 投稿直後は閲覧数が積み上がる途中なので、これより若い投稿は「伸びた/伸びなかった」の
+# 比較分析から除外する（トップ3の紹介や総閲覧数には、除外せず含める）。
+MIN_AGE_HOURS_FOR_ANALYSIS = 24
 
 
 def read_csv(path):
@@ -159,6 +167,68 @@ def short_date(date_str):
     return f"{int(date_str[5:7])}/{int(date_str[8:10])}"
 
 
+def has_value(row, field):
+    """その行のその項目に数字が入っているか。
+    APIエラーで取れなかった日は空欄になるので、「0」と区別するために使う。"""
+    return str(row.get(field, "")).strip() != ""
+
+
+def trend_chart(title, days, field, y_label, lines):
+    """日別の推移グラフを追加する。取得できなかった日はグラフから飛ばす（0で描かない）。"""
+    valid = [r for r in days if has_value(r, field)]
+    if len(valid) < 2:
+        return
+    lines.append(mermaid_chart(
+        title,
+        [short_date(r["date"]) for r in valid],
+        [to_int(r[field]) for r in valid],
+        "line", y_label,
+    ))
+    lines.append("")
+    missing = [short_date(r["date"]) for r in days if not has_value(r, field)]
+    if missing:
+        lines.append(f"※ {'、'.join(missing)} は取得に失敗したため、グラフから外しています"
+                     "（閲覧が0だったわけではありません）。")
+        lines.append("")
+
+
+def post_age_hours(post, now):
+    """投稿されてから何時間経ったか。日時が読めなければ None。"""
+    dt = parse_dt(post.get("posted_at"))
+    return (now - dt).total_seconds() / 3600 if dt else None
+
+
+def views_at_24h(post, history_by_post):
+    """
+    投稿から24時間後に近い時点の閲覧数を返す（履歴がなければ None）。
+    投稿の新しさによる有利・不利をなくして比べるために使う。
+    """
+    posted = parse_dt(post.get("posted_at"))
+    snapshots = history_by_post.get(post.get("post_id"), [])
+    if not posted or not snapshots:
+        return None
+    best, best_diff = None, None
+    for snap in snapshots:
+        taken = parse_dt(snap.get("fetched_at"))
+        if not taken:
+            continue
+        age = (taken - posted).total_seconds() / 3600
+        if not 12 <= age <= 48:  # 24時間から離れすぎている記録は使わない
+            continue
+        diff = abs(age - 24)
+        if best_diff is None or diff < best_diff:
+            best, best_diff = snap, diff
+    return to_int(best.get("views")) if best else None
+
+
+def load_post_history():
+    """data/post_history.csv（投稿ごとの日々の記録）を投稿IDごとにまとめて返す。"""
+    history = defaultdict(list)
+    for row in read_csv(HISTORY_CSV):
+        history[row.get("post_id", "")].append(row)
+    return history
+
+
 def build_suggestions(this_week, slot_avg, weekday_avg, theme_avg, top_posts, low_posts):
     """データから改善提案を組み立てる（当てはまるものから最大3つ）。"""
     suggestions = []
@@ -248,12 +318,28 @@ def main():
 
     week_posts = sorted(this_week["posts"], key=lambda p: to_int(p.get("views")), reverse=True)
     top3 = week_posts[:3]
-    # 「伸びなかった投稿」= 閲覧数下位半分（トップ3と重ならないように下から取る）
-    bottom_half = week_posts[len(week_posts) // 2:] if len(week_posts) >= 4 else []
 
-    # 時間帯・曜日・テーマ別の平均閲覧数
-    slot_views, weekday_views, theme_views = defaultdict(list), defaultdict(list), defaultdict(list)
+    # 投稿直後の投稿は閲覧数が積み上がる途中なので、比較分析からは外す。
+    # （例: 昨日の投稿と5日前の投稿を並べると、新しいほうが不当に低く見えてしまう）
+    now = datetime.now(JST)
+    mature_posts = [p for p in week_posts
+                    if (post_age_hours(p, now) or 0) >= MIN_AGE_HOURS_FOR_ANALYSIS]
+    young_count = len(week_posts) - len(mature_posts)
+
+    # 「伸びなかった投稿」= 閲覧数下位半分（比較対象は出そろった投稿のみ）
+    bottom_half = mature_posts[len(mature_posts) // 2:] if len(mature_posts) >= 4 else []
+
+    # 投稿から24時間後時点の閲覧数（履歴が貯まっている投稿だけ）
+    history_by_post = load_post_history()
+    fair_views = {}
     for p in week_posts:
+        v24 = views_at_24h(p, history_by_post)
+        if v24 is not None:
+            fair_views[p["post_id"]] = v24
+
+    # 時間帯・曜日・テーマ別の平均閲覧数（出そろった投稿だけで計算）
+    slot_views, weekday_views, theme_views = defaultdict(list), defaultdict(list), defaultdict(list)
+    for p in mature_posts:
         dt = parse_dt(p.get("posted_at"))
         views = to_int(p.get("views"))
         if dt:
@@ -286,10 +372,11 @@ def main():
     pv = prev_week["post_views"] if has_prev else None
     lines.append(f"- **総閲覧数（今週の投稿{pc}件の閲覧数合計）**: {fmt_num(tv)} {fmt_delta(tv, pv)}")
 
-    if this_week["days_recorded"] > 0:
+    view_days = sum(1 for r in this_week["days"] if has_value(r, "views"))
+    if view_days > 0:
         lines.append(
             f"- **アカウント全体の表示回数**: {fmt_num(this_week['account_views'])}"
-            f"（記録{this_week['days_recorded']}日分の日別合計。過去の投稿が見られた分も含むため、上の数字とは対象が異なります）"
+            f"（取得できた{view_days}日分の合計。過去の投稿が見られた分も含むため、上の数字とは対象が異なります）"
         )
 
     if this_week["followers_end"] is not None:
@@ -310,20 +397,15 @@ def main():
         lines.append(f"- ℹ️ 今週はデータが{this_week['days_recorded']}日ぶんしかありません（貯まるほど正確になります）")
     lines.append("")
 
-    # --- 推移グラフ（2日以上データがあるとき） ---
+    # --- 推移グラフ（2日以上データがあるとき。取得失敗の日は飛ばして描く） ---
     days = this_week["days"]
     if len(days) >= 2:
-        labels = [short_date(r["date"]) for r in days]
         lines.append("### 📈 日別の閲覧数の推移（アカウント全体）")
         lines.append("")
-        lines.append(mermaid_chart("1日ごとにアカウント全体が見られた回数",
-                                   labels, [to_int(r["views"]) for r in days], "line"))
-        lines.append("")
+        trend_chart("1日ごとにアカウント全体が見られた回数", days, "views", "閲覧数", lines)
         lines.append("### 👥 フォロワー数の推移")
         lines.append("")
-        lines.append(mermaid_chart("フォロワー数",
-                                   labels, [to_int(r["followers_count"]) for r in days], "line", "人"))
-        lines.append("")
+        trend_chart("フォロワー数", days, "followers_count", "人", lines)
 
     # --- トップ3投稿 ---
     lines.append("## 🏆 閲覧数トップ3の投稿")
@@ -339,6 +421,9 @@ def main():
                 f" ／ リプライ {fmt_num(to_int(p.get('replies')))} ／ リポスト {fmt_num(to_int(p.get('reposts')))}"
             )
             lines.append(f"- **エンゲージメント率: {fmt_rate(rate)}**（いいね＋リプライ＋リポスト ÷ 閲覧数）")
+            age = post_age_hours(p, now)
+            if age is not None and age < MIN_AGE_HOURS_FOR_ANALYSIS:
+                lines.append(f"- ℹ️ 投稿から{int(age)}時間しか経っていないため、数字はまだ伸びる途中です")
             if p.get("permalink"):
                 lines.append(f"- [投稿を見る]({p['permalink']})")
             lines.append("")
@@ -346,11 +431,40 @@ def main():
         lines.append("今週の投稿データがまだありません。")
         lines.append("")
 
+    # --- 24時間後の閲覧数で揃えた比較（履歴が2件以上あるとき） ---
+    if len(fair_views) >= 2:
+        lines.append("## ⚖️ 投稿から24時間後の閲覧数（条件を揃えた比較）")
+        lines.append("")
+        lines.append("閲覧数は投稿後もずっと増え続けるので、古い投稿ほど有利に見えます。"
+                     "ここでは「投稿から24時間後」の時点で揃えて比べています。")
+        lines.append("")
+        ranked = sorted(
+            (p for p in week_posts if p["post_id"] in fair_views),
+            key=lambda p: fair_views[p["post_id"]], reverse=True,
+        )
+        lines.append(mermaid_chart(
+            "投稿から24時間後の閲覧数",
+            # 同じ日に2本投稿することがあるので、時刻まで入れて区別する
+            [p.get("posted_at", "?")[5:].replace("-", "/") for p in ranked],
+            [fair_views[p["post_id"]] for p in ranked],
+        ))
+        lines.append("")
+        lines.append("| 投稿日時 | 24時間後の閲覧数 | 現在の閲覧数 | 本文の冒頭 |")
+        lines.append("|---|---|---|---|")
+        for p in ranked:
+            lines.append(f"| {p.get('posted_at', '?')} | {fmt_num(fair_views[p['post_id']])} "
+                         f"| {fmt_num(to_int(p.get('views')))} | {excerpt(p.get('text'), 20)} |")
+        lines.append("")
+
     # --- 伸びなかった投稿との違い ---
     lines.append("## 🔍 伸びた投稿・伸びなかった投稿の違い")
     lines.append("")
-    if len(week_posts) >= 4:
-        top_half = week_posts[: len(week_posts) // 2]
+    if young_count:
+        lines.append(f"ℹ️ 投稿から24時間経っていない{young_count}件は、数字が出そろっていないため"
+                     "この比較からは外しています。")
+        lines.append("")
+    if len(mature_posts) >= 4:
+        top_half = mature_posts[: len(mature_posts) // 2]
         top_avg = sum(to_int(p.get("views")) for p in top_half) / len(top_half)
         low_avg = sum(to_int(p.get("views")) for p in bottom_half) / len(bottom_half)
         lines.append(f"伸びた投稿（上位半分）の平均閲覧数は **{fmt_num(int(top_avg))}**、"
@@ -412,7 +526,7 @@ def main():
                 lines.append(f"| {theme} | {fmt_num(int(avg))} | {count}件 |")
             lines.append("")
     else:
-        lines.append("投稿数がまだ少ないため（4件未満）、比較分析は来週以降に行います。")
+        lines.append("数字が出そろった投稿がまだ少ないため（4件未満）、比較分析は来週以降に行います。")
         lines.append("")
 
     # --- 改善提案 ---

@@ -26,12 +26,20 @@ from threads_api import (
 
 ACCOUNT_CSV = DATA_DIR / "account_daily.csv"
 POSTS_CSV = DATA_DIR / "posts.csv"
+HISTORY_CSV = DATA_DIR / "post_history.csv"
 
 ACCOUNT_FIELDS = ["date", "followers_count", "views", "fetched_at"]
 POST_FIELDS = [
     "post_id", "posted_at", "text", "permalink", "media_type",
     "views", "likes", "replies", "reposts", "quotes", "shares",
     "last_updated",
+]
+# 投稿ごとの数字を「取得した日」とセットで毎日残す。
+# posts.csv は最新の数字だけを持つが、こちらは日々の変化が積み上がるので、
+# 「投稿から24時間後の閲覧数」のような公平な比較ができるようになる。
+HISTORY_FIELDS = [
+    "key", "fetched_at", "post_id", "posted_at",
+    "views", "likes", "replies", "reposts",
 ]
 
 # 投稿は直近この日数ぶんをまとめて取り直す（後から伸びる「いいね」等も反映されるように）
@@ -190,6 +198,22 @@ def main():
             }
         if rows:
             upsert_csv(POSTS_CSV, POST_FIELDS, rows, "post_id")
+            # 「いつ時点の数字か」を残す履歴。同じ日に2回実行しても1日1行に上書きされる
+            history = {}
+            for post_id, r in rows.items():
+                key = f"{today}_{post_id}"
+                history[key] = {
+                    "key": key,
+                    "fetched_at": now_str,
+                    "post_id": post_id,
+                    "posted_at": r["posted_at"],
+                    "views": r["views"],
+                    "likes": r["likes"],
+                    "replies": r["replies"],
+                    "reposts": r["reposts"],
+                }
+            upsert_csv(HISTORY_CSV, HISTORY_FIELDS, history, "key")
+            log(f"投稿ごとの履歴を {len(history)} 件記録しました（24時間後比較に使います）")
 
         days_left = token_days_left()
         if days_left is not None and days_left <= 10:

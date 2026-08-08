@@ -529,6 +529,11 @@ def main():
         lines.append("数字が出そろった投稿がまだ少ないため（4件未満）、比較分析は来週以降に行います。")
         lines.append("")
 
+    # --- 「型」別の傾向（記録が20件以上貯まってから出る） ---
+    # 遅延インポート: tag_analysis はこのファイルを読み込むため、先頭で読むと循環参照になる
+    from tag_analysis import analysis_lines
+    lines.extend(analysis_lines())
+
     # --- 改善提案 ---
     lines.append("## 💡 来週に向けた改善提案")
     lines.append("")
